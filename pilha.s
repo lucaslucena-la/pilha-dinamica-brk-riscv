@@ -1,101 +1,261 @@
-.section .data 
-msg_pop: .asciz "Pop: "
+.section .data
+
+# Ponteiro fixo para o início do heap da pilha
+# 8 bytes porque estamos em RV64 (endereços 64-bit)
+base:   .word 0
+
+# Ponteiro para o topo atual da pilha
+# Também 8 bytes
+topo:   .word 0
+
+# Formatos usados no printf
+fmt_show:
+    .asciz "[%d] "
+
+fmt_base:
+    .asciz "Endereço BASE: %p\n"
+
+fmt_topo:
+    .asciz "Endereço TOPO: %p\n"
+
+newline:
+    .asciz "\n"
+
+# Formato para mostrar pilha vertical
+fmt_vertical:
+    .asciz "( %d )\n"
+
+msg_empty_stack:
+    .asciz "Pilha vazia!\n"
+
 
 .section .text
-.globl _start
 
-_start:
-
-li a7, 214  # carrega em a7o número da syscall brk
-li a0, 0    # argumento 0: solicitar o break atual
-ecall
-
-mv s1, a0   # inicializa o topo da pilha (s1 = break atual)
-
-li t0, 5   # carrega o valor 5 para empilhar
-
-jal ra, push    # chama função push(10)
-
-li t0, 6   # carrega o valor 6 para empilhar
-jal ra, push    # chama a função push (20)
-
-li t0, 8   # carrega o valor 8 para empilhar
-jal ra, push    # chama a função push (30)
-
-jal ra, pop     
-jal ra, pop 
-jal ra, pop
+# Funções da pila exportadas para main.s
+.globl init_stack
+.globl push
+.globl pop
+.globl show_stack
+.globl show_heap_info
 
 
-li a7, 10   # syscall exit
-li a0, 0    # código de saída
-ecall
+# init_stack()
+# Inicializa a pilha dinâmica usando brk
+# base = topo = endereço atual do heap
+init_stack:
 
-
-
-# Função Push
-# Entrada: t0 -> inteiro a ser empilhado
-# s1 -> topo da pilha (program break)
-
-
-push:
-
+    # syscall brk
     li a7, 214
-    addi a0, s1, 4    # novo break = topo + 4
-    ecall           # aloca esapço no heap
 
-    # Armazena o valor no topo atual
-    sw t0, 0(s1)
+    # retorna break atual, ou seja onde o heap termina atualmente, que é o início da pilha
+    li a0, 0
+    ecall # a0 agora tem o endereço do início do heap, que será a base da pilha
 
-    # Atualiza o topo da pilha
-    addi s1, s1, 4
+    # t0 recebe endereço da variável base
+    la t0, base
+
+    # salva o endereço do heap em base
+    # (início fixo da pilha)
+    sw a0, 0(t0) # Armazena o valor retornado pelo SO (em a0) na posição de memória 'base'.
+
+    # t1 recebe endereço da variável topo
+    la t1, topo
+
+    # topo começa igual à base (pilha vazia)
+    sw a0, 0(t1)# sw: armazena valor de a0 no endereço apontado por t1; topo = base no inicio
 
     ret
+#
 
 
-# Função Pop
-# Remove o topo da pilha e imprime o valor desempilhado
 
+# push(x)
+# Entrada:
+#   a0 = valor a ser inserido
+#
+# Estratégia:
+# 1) topo aponta para o próximo espaço livre
+# 2) escrevemos no topo atual
+# 3) aumentamos o heap usando brk
+# 4) atualizamos topo
+push:
+
+    # Reserva espaço na stack (16 bytes)
+    addi sp, sp, -16
+
+    # Salva endereço de retorno
+    sw ra, 12(sp)
+
+    # Salva valor original
+    sw a0, 8(sp) # valor digitado pelo usuário 
+
+    # Carrega topo atual
+    la t0, topo
+    lw t1, 0(t0)      # t1 = topo atual 
+
+    # Calcula novo topo (4 bytes por inteiro)
+    addi t2, t1, 4    # t2 = novo topo
+
+    # ---- Expande o heap ----
+    # brk(novo_topo)
+    li a7, 214
+    mv a0, t2 # a0 recebe o novo topo, que é o endereço para onde queremos expandir o heap
+    ecall             # heap cresce até t2
+
+    # Recupera valor salvo
+    lw t3, 8(sp)
+
+    # Escreve valor na posição antiga do topo
+    sw t3, 0(t1)
+
+    # Atualiza variável topo
+    la t4, topo
+    sw t2, 0(t4)
+
+    # Restaura ra
+    lw ra, 12(sp)
+
+    # Libera stack frame
+    addi sp, sp, 16
+    ret
+#
+
+
+# pop()
+# Remove o elemento do topo
+#
+# Estratégia:
+# 1) Se topo == base → pilha vazia
+# 2) topo -= 4
+# 3) lê valor
+# 4) reduz heap com brk
+# 5) atualiza topo
 pop:
 
-    # salvando ra, pois faremos ecalls dentro da função
     addi sp, sp, -16
-    sw ra, 0(sp)
+    sw ra, 12(sp)
 
-    # Atualiza o topo da pilha
-    addi s1, s1, -4
+    # Carrega base
+    la t0, base
+    lw t1, 0(t0) # t1 = endereço base
 
-    # Lê o valor do topo
-    lw t0, 0(s1)
+    # Carrega topo
+    la t2, topo
+    lw t3, 0(t2) # t3 = endereço topo
 
-    li a7, 64       # syscall write
-    li a0, 1        # file descriptor 1 (stdout)
-    la a1, msg_pop  # endereço da mensagem "Pop: "
-    li a2, 5        # tamanho da mensagem
-    ecall
+    # Se topo == base → vazia
+    beq t1, t3, empty_stack
 
-    addi t0, t0, 48 # Converte inteiro (0–9) para ASCII
-    sb t0, 8(sp)   # Armazena caractere na stack da CPU
+    # t3 = Novo topo (remove 4 bytes) aponta para o endereço do último elemento
+    addi t3, t3, -4
 
-    li a7, 64       # syscall write
-    li a0, 1        # file descriptor 1 (stdout)
-    addi a1, sp, 8 # endereço do caractere a ser impresso
-    li a2, 1        # tamanho do caractere
-    ecall
+    # Lê valor removido
+    lw t5, 0(t3) # t5 = valor do topo da pilha, que é o valor a ser retornado
 
-    li t1, 10       # código ASCII para '\n'
-    sb t1, 9(sp)   # armazena '\n'
-    li a7, 64       
-    li a0, 1
-    addi a1, sp, 9
-    li a2, 1
-    ecall
-    
-    li a7, 214      # syscall brk
-    mv a0, s1       # Novo program break (liberação)
-    ecall           # Libera memória do heap
+    # Reduz heap com brk
+    li a7, 214
+    mv a0, t3
+    ecall # heap reduzido para t3, ou seja, topo volta a ser t3 e o valor que estava em t3 é considerado removido da pilha
 
-    lw ra, 0(sp)
+    # Atualiza topo com valor retornado pelo brk
+    la t4, topo
+    sw a0, 0(t4)
+
+    # Retorna valor removido em a0
+    mv a0, t5
+
+    lw ra, 12(sp)
     addi sp, sp, 16
+    ret
 
+#
+
+empty_stack:
+    li a0, -1         # sinaliza erro
+    lw ra, 12(sp)
+    addi sp, sp, 16
+    ret
+#
+
+
+# show_stack()
+# Mostra pilha verticalmente
+# Estratégia:
+# Percorre do topo-4 até base
+show_stack:
+
+    addi sp, sp, -16
+    sw ra, 12(sp)
+    sw s0, 8(sp)
+    sw s1, 4(sp)
+
+    # s1 = base
+    la t0, base
+    lw s1, 0(t0)
+
+    # s0 = topo
+    la t1, topo
+    lw s0, 0(t1)
+
+    # Se topo == base → vazia
+    beq s0, s1, empty_stack_print
+
+    # Começa do último elemento
+    addi s0, s0, -4
+#
+
+print_loop:
+
+    # Se passou da base → fim
+    blt s0, s1, end_show # blt: branch if less than; se s0 < s1, pula para end_show: quer dizer, se topo < base, acabou de imprimir o último elemento
+
+    # Carrega valor atual
+    lw a1, 0(s0)
+
+    # printf("( %d )\n")
+    la a0, fmt_vertical # a0 recebe o endereço do formato para imprimir verticalmente
+    call printf
+
+    # Move para elemento anterior
+    addi s0, s0, -4
+    j print_loop
+
+#
+
+
+empty_stack_print:
+    la a0, msg_empty_stack
+    call printf
+    j end_show
+#
+
+
+end_show:
+    lw s1, 4(sp)
+    lw s0, 8(sp)
+    lw ra, 12(sp)
+    addi sp, sp, 16
+    ret
+#
+
+# show_heap_info()
+# Mostra endereços base e topo
+show_heap_info:
+    addi sp, sp, -16
+    sw ra, 12(sp)
+
+    # Mostra base
+    la t0, base # t0 recebe o endereço da variável base
+    lw a1, 0(t0) # a1 recebe o valor armazenado em base, que é o endereço do início do heap (base da pilha)
+    la a0, fmt_base 
+    call printf
+
+    # Mostra topo
+    la t1, topo
+    lw a1, 0(t1)
+    la a0, fmt_topo
+    call printf
+
+    lw ra, 12(sp)
+    addi sp, sp, 16
     ret

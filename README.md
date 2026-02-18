@@ -1,205 +1,46 @@
-# Pilha Dinâmica no Heap usando brk (RISC-V)
+# Pilha Dinâmica no Heap com Syscall BRK (RISC-V)
 
-## 📌 Descrição Geral
+Este projeto implementa uma **Pilha de Inteiros** alocada dinamicamente no **Heap** utilizando exclusivamente a chamada de sistema `brk` (syscall 214) da arquitetura RISC-V. Diferente de uma pilha convencional que utiliza o registrador `sp` (Stack Pointer), esta implementação gerencia manualmente o *Program Break* do processo para alocar e liberar memória.
 
-Este projeto implementa uma **pilha de inteiros (32 bits)** alocada dinamicamente no **heap**, utilizando **exclusivamente a syscall `brk`**, conforme solicitado no enunciado da Parte 1 do trabalho de Organização de Computadores.
+## 📋 Especificações Técnicas
 
-A pilha **não utiliza a stack da CPU** para armazenamento dos dados, apenas para chamadas de função.  
-A política adotada é **LIFO (Last In, First Out)**, garantindo que a liberação de memória seja correta ao reduzir o program break.
+* **Arquitetura:** RISC-V (RV64).
+* **Linguagem:** Assembly.
+* **Gerenciamento de Memória:** Direto via Syscall `brk` (214).
+* **Política de Dados:** LIFO (*Last In, First Out*).
+* **Tamanho do Elemento:** 4 bytes (Inteiro de 32 bits).
 
-## 🎯 Objetivos do Trabalho
+## 🛠️ Estrutura do Projeto
 
-- Implementar uma pilha dinâmica no heap
-- Utilizar apenas a syscall `brk` para:
-  - Alocar memória
-  - Liberar memória
-- Demonstrar:
-  - Crescimento do heap no `push`
-  - Redução do heap no `pop`
-  - Comportamento LIFO da pilha
-- Validar o funcionamento por meio de **depuração com GDB**
+O projeto é dividido em dois módulos principais:
 
-## 🧠 Conceito de Funcionamento
+1.  **`pilha.s`**: Contém a lógica de baixo nível para manipulação do Heap.
+    * `init_stack`: Captura o endereço inicial do heap.
+    * `push`: Expande o heap e insere um valor.
+    * `pop`: Recupera o valor e reduz o heap (liberação real de memória).
+    * `show_stack`: Percorre a memória do heap para exibir os elementos.
+    * `show_heap_info`: Exibe os endereços hexadecimais da base e do topo.
 
-- O **heap cresce para endereços maiores**
-- O **program break** aponta para o topo do heap
-- O registrador `s1` é utilizado como:
-  - **Topo da pilha**
-- Cada elemento da pilha ocupa **4 bytes (1 inteiro)**
+2.  **`main.s`**: Interface de usuário via terminal (Menu interativo) que utiliza as funções da biblioteca `pilha.s`.
 
-### Operações
+## 🚀 Como Executar
 
-#### `push(x)`
+O projeto utiliza um `Makefile` para facilitar a compilação cruzada e execução via emulador QEMU.
 
-1. Calcula novo break: `s1 + 4`
-2. Chama `brk(s1 + 4)`
-3. Armazena `x` em `0(s1)`
-4. Atualiza `s1 = s1 + 4`
+### Pré-requisitos
+* GCC para RISC-V (`riscv64-linux-gnu-gcc`)
+* QEMU para RISC-V (`qemu-riscv64`)
 
-#### `pop()`
-
-1. Atualiza `s1 = s1 - 4`
-2. Recupera o valor armazenado em `0(s1)`
-3. Reduz o program break com `brk(s1)`
-
-## 🛠️ Compilação e Execução
-
-### Compilação
-
+### Comandos
+Para compilar o projeto:
 ```bash
-riscv64-linux-gnu-as -g -march=rv32im -mabi=ilp32 pilha.s -o pilha.o
-riscv64-linux-gnu-ld -m elf32lriscv pilha.o -o pilha.exe
+make
 ```
-
-### Execução normal
-
+Para executar o projeto:
 ```bash
-qemu-riscv32 pilha.exe
+make run
 ```
-
-## 🐞 Depuração com GDB (Passo a Passo Completo)
-
-1. **Iniciar o QEMU em modo debug (Terminal 1)**
-
-   ```bash
-   qemu-riscv32 -g 1234 pilha.exe
-   ```
-
-2. **Iniciar e Conectar o GDB (Terminal 2)**
-
-   ```bash
-   gdb-multiarch pilha.exe
-   (gdb) target remote :1234
-   ```
-
-3. **Ver Instruções do programa**
-
-   ```bash
-   (gdb) x/6i $pc
-   ```
-
-   **Exemplo:**
-
-   ```
-   =>  li a7,214
-       li a0,0
-       ecall
-       mv s1,a0
-       li t0,5
-       jal push
-   ```
-
-4. **Executar inicialização passo a passo**
-
-   ```bash
-   (gdb) stepi
-   (gdb) stepi
-   (gdb) stepi
-   (gdb) stepi
-   ```
-
-   **Verificar Topo da pilha**
-
-   ```bash
-   (gdb) info registers s1
-   ```
-
-5. **Entrar na função `push`**
-
-   ```bash
-   (gdb) stepi
-
-   (gdb) x/6i $pc
-   ```
-
-   **Exemplo Real:**
-
-   ```
-   li a7,214
-   addi a0,s1,4
-   ecall
-   sw t0,0(s1)
-   addi s1,s1,4
-   ret
-   ```
-
-6. **Debug do Push**
-
-   **Verificar o novo topo da pilha após o push**
-
-   ```bash
-   (gdb) info registers s1
-   ```
-
-   **Executar Instruções:**
-
-   ```bash
-   (gdb) stepi   # li a7,214
-   (gdb) stepi   # addi a0,s1,4
-   (gdb) stepi   # ecall
-   (gdb) stepi   # sw t0,0(s1)
-   (gdb) stepi   # addi s1,s1,4
-   ```
-
-   **Ver topo da pilha após o push:**
-
-   ```bash
-   (gdb) info registers s1
-   ```
-
-   **Ver Valor no heap:**
-
-   ```bash
-   (gdb) x/1w $s1-4
-   ```
-
-7. **Voltar ao Programa prncipal**
-
-   ```bash
-   (gdb) stepi   # ret
-   ```
-
-8. **Colocar breakpoint no início real do `pop`**
-
-   ```bash
-   (gdb) break *pop
-   (gdb) continue
-   ```
-
-   O uso de `break *pop` garante que o breakpoint seja colocado no início real da função, antes das instruções de desempilhamento.
-
-9. **Ver conteúdo do `pop`**
-
-   ```bash
-   (gdb) x/6i $pc
-   ```
-
-   **Exemplo Real:**
-
-   ```
-   addi sp,sp,-16
-   sw ra,0(sp)
-   addi s1,s1,-4
-   lw t0,0(s1)
-   ```
-
-10. **Debug do Pop**
-    **Executar Instruções até o desempilhamento :**
-
-    ```bash
-    (gdb) stepi   # addi sp,sp,-16
-    (gdb) stepi   # sw ra,0(sp)
-    (gdb) stepi   # addi s1,s1,-4
-    ```
-
-    **Ver topo após redução:**
-
-    ```bash
-    (gdb) info registers s1
-    ```
-
-    **Ver valor desempilhado:**
-
-    ```bash
-    (gdb) info registers t0
-    ```
+Para limpar os arquivos gerados:
+```bash
+make clean
+```
