@@ -2,7 +2,7 @@
 
 # Ponteiro fixo para o início do heap da pilha
 # 8 bytes porque estamos em RV64 (endereços 64-bit)
-base:   .word 0
+base:   .word 0 
 
 # Ponteiro para o topo atual da pilha
 # Também 8 bytes
@@ -12,11 +12,21 @@ topo:   .word 0
 fmt_show:
     .asciz "[%d] "
 
+fmt_endereco:
+    .asciz "( %d ) -> Endereço: %p\n"
+
+# Este é o formato para o ÚLTIMO item da lista (a base)
+fmt_base_item:
+    .asciz "( %d ) -> BASE: %p\n"
+
 fmt_base:
-    .asciz "Endereço BASE: %p\n"
+    .asciz "BASE: %p\n"
 
 fmt_topo:
-    .asciz "Endereço TOPO: %p\n"
+    .asciz "TOPO: %p\n"
+
+fmt_topo_vazio:
+    .asciz "(   ) -> TOPO: %p\n"  # Representa o espaço alocado mas vazio
 
 newline:
     .asciz "\n"
@@ -46,7 +56,6 @@ init_stack:
 
     # syscall brk
     li a7, 214
-
     # retorna break atual, ou seja onde o heap termina atualmente, que é o início da pilha
     li a0, 0
     ecall # a0 agora tem o endereço do início do heap, que será a base da pilha
@@ -66,7 +75,6 @@ init_stack:
 
     ret
 #
-
 
 
 # push(x)
@@ -90,8 +98,8 @@ push:
     sw a0, 8(sp) # valor digitado pelo usuário 
 
     # Carrega topo atual
-    la t0, topo
-    lw t1, 0(t0)      # t1 = topo atual 
+    la t0, topo     # t0 recebe o endereço da variável topo
+    lw t1, 0(t0)      # t1 = endereço do topo atual da pilha, ou seja, o próximo espaço livre onde o valor será inserido
 
     # Calcula novo topo (4 bytes por inteiro)
     addi t2, t1, 4    # t2 = novo topo
@@ -109,8 +117,8 @@ push:
     sw t3, 0(t1)
 
     # Atualiza variável topo
-    la t4, topo
-    sw t2, 0(t4)
+    la t4, topo # t4 recebe o endereço da variável topo
+    sw t2, 0(t4) # topo = novo topo (t2) 
 
     # Restaura ra
     lw ra, 12(sp)
@@ -142,12 +150,13 @@ pop:
     # Carrega topo
     la t2, topo
     lw t3, 0(t2) # t3 = endereço topo
+    # o topo da pilha aponta para o próximo espaço livre, ou seja, o endereço onde o próximo elemento seria inserido. O último elemento da pilha está em t3 - 4, porque cada elemento ocupa 4 bytes (tamanho de um inteiro).
 
     # Se topo == base → vazia
     beq t1, t3, empty_stack
 
     # t3 = Novo topo (remove 4 bytes) aponta para o endereço do último elemento
-    addi t3, t3, -4
+    addi t3, t3, -4  
 
     # Lê valor removido
     lw t5, 0(t3) # t5 = valor do topo da pilha, que é o valor a ser retornado
@@ -170,6 +179,7 @@ pop:
 
 #
 
+
 empty_stack:
     li a0, -1         # sinaliza erro
     lw ra, 12(sp)
@@ -191,17 +201,24 @@ show_stack:
 
     # s1 = base
     la t0, base
-    lw s1, 0(t0)
+    lw s1, 0(t0) 
 
     # s0 = topo
     la t1, topo
     lw s0, 0(t1)
 
+
     # Se topo == base → vazia
     beq s0, s1, empty_stack_print
 
+    # --- PRINT DO TOPO VAZIO ---
+
+    mv a1, s0 # a1 recebe o endereço do topo para ser mostrado no printf
+    la a0, fmt_topo_vazio
+    call printf
+
     # Começa do último elemento
-    addi s0, s0, -4
+    addi s0, s0, -4 # s0 apontava para o próximo 
 #
 
 print_loop:
@@ -209,19 +226,34 @@ print_loop:
     # Se passou da base → fim
     blt s0, s1, end_show # blt: branch if less than; se s0 < s1, pula para end_show: quer dizer, se topo < base, acabou de imprimir o último elemento
 
+    # Argumentos para o printf:
+    # a0 = formato
+    # a1 = valor do inteiro (lw 0(s0))
+    # a2 = endereço do inteiro (s0)
+
     # Carrega valor atual
     lw a1, 0(s0)
+    mv a2, s0
 
-    # printf("( %d )\n")
-    la a0, fmt_vertical # a0 recebe o endereço do formato para imprimir verticalmente
+    # Teste da base
+    beq s0, s1, print_base # Se s0 == s1 (endereço atual == endereço base)
+
+    la a0, fmt_endereco # a0 recebe o endereço do formato para imprimir verticalmente
     call printf
-
-    # Move para elemento anterior
-    addi s0, s0, -4
-    j print_loop
+    j decrementa_ponteiro
 
 #
 
+print_base:
+    la a0, fmt_base_item # a0 recebe o endereço do formato para imprimir verticalmente
+    call printf
+    j decrementa_ponteiro
+#
+
+decrementa_ponteiro:
+    addi s0, s0, -4
+    j print_loop
+#
 
 empty_stack_print:
     la a0, msg_empty_stack
