@@ -180,18 +180,10 @@ pop:
 #
 
 
-empty_stack:
-    li a0, -1         # sinaliza erro
-    lw ra, 12(sp)
-    addi sp, sp, 16
-    ret
-#
-
-
 # show_stack()
 # Mostra pilha verticalmente
 # Estratégia:
-# Percorre do topo-4 até base
+# Percorre do topo - 4 até base, pois topo aponta para o espaço livre após o último elemento
 show_stack:
 
     addi sp, sp, -16
@@ -214,61 +206,63 @@ show_stack:
     # --- PRINT DO TOPO VAZIO ---
 
     mv a1, s0 # a1 recebe o endereço do topo para ser mostrado no printf
-    la a0, fmt_topo_vazio
+    la a0, fmt_topo_vazio 
     call printf
 
     # Começa do último elemento
     addi s0, s0, -4 # s0 apontava para o próximo 
+
+
+    print_loop:
+
+        # Se passou da base → fim
+        blt s0, s1, end_show # blt: branch if less than; se s0 < s1, pula para end_show: quer dizer, se topo < base, acabou de imprimir o último elemento
+
+        # Argumentos para o printf:
+        # a0 = formato
+        # a1 = valor do inteiro (lw 0(s0))
+        # a2 = endereço do inteiro (s0)
+
+        # Carrega valor atual que é o valor do topo
+        lw a1, 0(s0) # a1 recebe o valor do topo da pilha, que é o valor a ser mostrado no printf
+        mv a2, s0 # a2 recebe o endereço do topo da pilha, que é o endereço a ser mostrado no printf
+
+        # Teste da base
+        beq s0, s1, print_base # Se s0 == s1 (endereço atual == endereço base)
+
+        la a0, fmt_endereco # a0 recebe o endereço do formato para imprimir verticalmente
+        call printf
+        j decrementa_ponteiro
+
+    #
+
+    print_base:
+        la a0, fmt_base_item # a0 recebe o endereço do formato para imprimir verticalmente
+        call printf
+        j decrementa_ponteiro
+    #
+
+    decrementa_ponteiro:
+        addi s0, s0, -4
+        j print_loop
+    #
+
+    empty_stack_print:
+        la a0, msg_empty_stack
+        call printf
+        j end_show
+    #
+
+    end_show:
+        lw s1, 4(sp)
+        lw s0, 8(sp)
+        lw ra, 12(sp)
+        addi sp, sp, 16
+        ret
+    #
+
 #
 
-print_loop:
-
-    # Se passou da base → fim
-    blt s0, s1, end_show # blt: branch if less than; se s0 < s1, pula para end_show: quer dizer, se topo < base, acabou de imprimir o último elemento
-
-    # Argumentos para o printf:
-    # a0 = formato
-    # a1 = valor do inteiro (lw 0(s0))
-    # a2 = endereço do inteiro (s0)
-
-    # Carrega valor atual
-    lw a1, 0(s0)
-    mv a2, s0
-
-    # Teste da base
-    beq s0, s1, print_base # Se s0 == s1 (endereço atual == endereço base)
-
-    la a0, fmt_endereco # a0 recebe o endereço do formato para imprimir verticalmente
-    call printf
-    j decrementa_ponteiro
-
-#
-
-print_base:
-    la a0, fmt_base_item # a0 recebe o endereço do formato para imprimir verticalmente
-    call printf
-    j decrementa_ponteiro
-#
-
-decrementa_ponteiro:
-    addi s0, s0, -4
-    j print_loop
-#
-
-empty_stack_print:
-    la a0, msg_empty_stack
-    call printf
-    j end_show
-#
-
-
-end_show:
-    lw s1, 4(sp)
-    lw s0, 8(sp)
-    lw ra, 12(sp)
-    addi sp, sp, 16
-    ret
-#
 
 # show_heap_info()
 # Mostra endereços base e topo
@@ -291,3 +285,13 @@ show_heap_info:
     lw ra, 12(sp)
     addi sp, sp, 16
     ret
+#
+
+
+# Tratamento de pilha vazia para pop()
+empty_stack:
+    li a0, -1         # sinaliza erro
+    lw ra, 12(sp)
+    addi sp, sp, 16
+    ret
+#
