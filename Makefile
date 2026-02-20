@@ -4,7 +4,7 @@
 
 CC      = riscv64-linux-gnu-gcc
 CFLAGS  = -march=rv64gc -mabi=lp64d -static -g
-TARGET  = pilha
+TARGET  = pilha.exe
 
 SRCS    = main.s pilha.s
 OBJS    = main.o pilha.o

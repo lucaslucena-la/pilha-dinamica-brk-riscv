@@ -1,5 +1,4 @@
 .section .data
-
 menu:
     .asciz "\n1- Push\n2- Pop\n3- Mostrar pilha\n4- Mostrar base/topo\n5- Sair\nOpcao: "
 
@@ -16,8 +15,8 @@ msg_empty:
     .asciz "Pilha vazia!\n"
 
 .section .bss
-opcao: .space 4
-valor: .space 4
+opcao: .space 4 # Variável para armazenar a opção do menu (4 bytes para um inteiro) 
+valor: .space 4 # Variável para armazenar o valor a ser empilhado (4 bytes para um inteiro)
 
 .section .text
 .globl main
@@ -31,11 +30,11 @@ main:
 menu_loop:
 
     la a0, menu # a0 recebe o endereço do menu para imprimir
-    call printf
+    call printf # Exibe o menu na tela printf(menu)
 
     la a0, fmt_int # a0 recebe o endereço do formato para ler um inteiro
     la a1, opcao # a1 recebe o endereço da variável opcao para armazenar a escolha do usuário
-    call scanf
+    call scanf # scanf(fmt_int, &opcao) lê a opção digitada pelo usuário e armazena em opcao
 
     lw t0, opcao # t0 recebe o valor da escolha do usuário digitada no teclado
 
@@ -60,7 +59,7 @@ menu_loop:
 op_push:
 
     la a0, msg_push # "Digite valor: "
-    call printf
+    call printf # printf(msg_push) exibe a mensagem para o usuário digitar um valor
 
     # ler o valor do teclado
     la a0, fmt_int     # Formato "%d"
@@ -75,9 +74,9 @@ op_push:
 
 op_pop:
 
-    call pop
-    li t0, -1
-    beq a0, t0, empty_msg # se pop retornar -1, significa que a pilha estava vazia
+    call pop # a0 = valor do elemento que foi removido, a1 = status da operação (0 para sucesso, -1 para pilha vazia)
+    li t0, -1 
+    beq a1, t0, empty_msg # se pop retornar -1, significa que a pilha estava vazia
 
     mv a1, a0 # a1 recebe o valor removido da pilha para ser impresso
     la a0, msg_pop # a0 recebe o endereço da mensagem para imprimir o valor removido

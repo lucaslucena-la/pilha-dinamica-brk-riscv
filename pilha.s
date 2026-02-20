@@ -1,11 +1,10 @@
 .section .data
 
 # Ponteiro fixo para o início do heap da pilha
-# 8 bytes porque estamos em RV64 (endereços 64-bit)
-base:   .word 0 
+base:   .word 0 # .word é usado para reservar 4 bytes
 
 # Ponteiro para o topo atual da pilha
-# Também 8 bytes
+# Também 4 bytes
 topo:   .word 0
 
 # Formatos usados no printf
@@ -27,9 +26,6 @@ fmt_topo:
 
 fmt_topo_vazio:
     .asciz "(   ) -> TOPO: %p\n"  # Representa o espaço alocado mas vazio
-
-newline:
-    .asciz "\n"
 
 # Formato para mostrar pilha vertical
 fmt_vertical:
@@ -87,7 +83,6 @@ init_stack:
 # 3) aumentamos o heap usando brk
 # 4) atualizamos topo
 push:
-
     # Reserva espaço na stack (16 bytes)
     addi sp, sp, -16
 
@@ -108,7 +103,7 @@ push:
     # brk(novo_topo)
     li a7, 214
     mv a0, t2 # a0 recebe o novo topo, que é o endereço para onde queremos expandir o heap
-    ecall             # heap cresce até t2
+    ecall         # heap cresce até t2
 
     # Recupera valor salvo
     lw t3, 8(sp)
@@ -138,6 +133,7 @@ push:
 # 3) lê valor
 # 4) reduz heap com brk
 # 5) atualiza topo
+# 6) retorna a0 = valor e a1 = status (0 para sucesso, -1 para pilha vazia)
 pop:
 
     addi sp, sp, -16
@@ -150,13 +146,14 @@ pop:
     # Carrega topo
     la t2, topo
     lw t3, 0(t2) # t3 = endereço topo
+
     # o topo da pilha aponta para o próximo espaço livre, ou seja, o endereço onde o próximo elemento seria inserido. O último elemento da pilha está em t3 - 4, porque cada elemento ocupa 4 bytes (tamanho de um inteiro).
 
     # Se topo == base → vazia
     beq t1, t3, empty_stack
 
     # t3 = Novo topo (remove 4 bytes) aponta para o endereço do último elemento
-    addi t3, t3, -4  
+    addi t3, t3, -4
 
     # Lê valor removido
     lw t5, 0(t3) # t5 = valor do topo da pilha, que é o valor a ser retornado
@@ -170,12 +167,21 @@ pop:
     la t4, topo
     sw a0, 0(t4)
 
-    # Retorna valor removido em a0
-    mv a0, t5
+    # Retorno de Sucesso
+    mv a0, t5           # Valor desempilhado vai em a0
+    li a1, 0            # Status 0 (Sucesso) vai em a1
 
-    lw ra, 12(sp)
+    lw ra, 12(sp) # recupero endereço de retorno de pop na main
     addi sp, sp, 16
     ret
+
+    # Tratamento de pilha vazia para pop()
+    empty_stack:
+        li a1, -1         # Status -1 indica que não há nada para remover
+        lw ra, 12(sp)       # Restaura endereço de retorno da função que chamou pop, que é a função main: call pop
+        addi sp, sp, 16
+        ret # Retorna para a main
+    #
 
 #
 
@@ -187,9 +193,9 @@ pop:
 show_stack:
 
     addi sp, sp, -16
-    sw ra, 12(sp)
-    sw s0, 8(sp)
-    sw s1, 4(sp)
+    sw ra, 12(sp) # Salva endereço de retorno
+    sw s0, 8(sp)  # Salva s0 (usado para o topo)
+    sw s1, 4(sp)  # Salva s1 (usado para a base)
 
     # s1 = base
     la t0, base
@@ -204,15 +210,14 @@ show_stack:
     beq s0, s1, empty_stack_print
 
     # --- PRINT DO TOPO VAZIO ---
+    mv a1, s0 # a1 recebe o endereço do topo para ser mostrado no printf 
+    la a0, fmt_topo_vazio # a0 recebe o endereço do formato para imprimir o topo vazio
+    call printf # printf( (   ) -> TOPO: %p\n )
 
-    mv a1, s0 # a1 recebe o endereço do topo para ser mostrado no printf
-    la a0, fmt_topo_vazio 
-    call printf
-
-    # Começa do último elemento
+    # Começa do último elemento armazenado na pilha
     addi s0, s0, -4 # s0 apontava para o próximo 
 
-
+    # se entrar aqui é proque há pelo menos um elemento na pilha
     print_loop:
 
         # Se passou da base → fim
@@ -224,11 +229,11 @@ show_stack:
         # a2 = endereço do inteiro (s0)
 
         # Carrega valor atual que é o valor do topo
-        lw a1, 0(s0) # a1 recebe o valor do topo da pilha, que é o valor a ser mostrado no printf
-        mv a2, s0 # a2 recebe o endereço do topo da pilha, que é o endereço a ser mostrado no printf
+        lw a1, 0(s0) # a1 recebe o valor do elemento atual da pilha, topo - 4
+        mv a2, s0 # a2 recebe o endereço do elemento atual da pilha, que é o endereço do topo - 4
 
         # Teste da base
-        beq s0, s1, print_base # Se s0 == s1 (endereço atual == endereço base)
+        beq s0, s1, print_base # Se s0 == s1 (endereço atual do elemnto == endereço base)
 
         la a0, fmt_endereco # a0 recebe o endereço do formato para imprimir verticalmente
         call printf
@@ -238,8 +243,8 @@ show_stack:
 
     print_base:
         la a0, fmt_base_item # a0 recebe o endereço do formato para imprimir verticalmente
-        call printf
-        j decrementa_ponteiro
+        call printf # printf( ( %d ) -> BASE: %p\n )
+        j decrementa_ponteiro 
     #
 
     decrementa_ponteiro:
@@ -249,7 +254,7 @@ show_stack:
 
     empty_stack_print:
         la a0, msg_empty_stack
-        call printf
+        call printf 
         j end_show
     #
 
@@ -288,10 +293,4 @@ show_heap_info:
 #
 
 
-# Tratamento de pilha vazia para pop()
-empty_stack:
-    li a0, -1         # sinaliza erro
-    lw ra, 12(sp)
-    addi sp, sp, 16
-    ret
-#
+
